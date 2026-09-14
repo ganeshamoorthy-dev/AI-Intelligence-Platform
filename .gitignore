@@ -1,0 +1,156 @@
+# =========================================================
+# General
+# =========================================================
+
+# OS generated files
+.DS_Store
+Thumbs.db
+Desktop.ini
+
+# IDE/editor files
+.vscode/
+.idea/
+*.iml
+
+# Logs
+*.log
+logs/
+
+# Temporary files
+*.tmp
+*.temp
+*.swp
+*.swo
+
+# Environment files and secrets
+.env
+.env.*
+!.env.example
+
+# =========================================================
+# Python Backend
+# =========================================================
+
+# Python cache
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Python build/package files
+*.egg
+*.egg-info/
+dist/
+build/
+.eggs/
+
+# Virtual environments
+.venv/
+venv/
+env/
+ENV/
+env.bak/
+venv.bak/
+
+# Pytest
+.pytest_cache/
+.coverage
+.coverage.*
+htmlcov/
+.tox/
+.nox/
+
+# Type checking
+.mypy_cache/
+.pyre/
+.pytype/
+.ruff_cache/
+
+# Jupyter
+.ipynb_checkpoints/
+
+# Python version managers
+.python-version
+
+# FastAPI/Uvicorn temporary files
+*.pid
+
+# Local databases
+*.sqlite
+*.sqlite3
+*.db
+
+# =========================================================
+# AI / Local Model / Graph Output
+# =========================================================
+
+# Graphify generated output
+graphify-out/
+graph.json
+
+# Local AI model/cache files
+.ollama/
+models/
+model_cache/
+
+# Temporary repositories and review workspaces
+tmp/
+temp/
+workspaces/
+review-workspaces/
+
+# Generated review context
+review_context/
+llm_context/
+generated_context/
+
+# =========================================================
+# Angular Frontend
+# =========================================================
+
+# Dependencies
+node_modules/
+
+# Angular build output
+dist/
+.angular/
+out-tsc/
+
+# Angular cache
+.cache/
+
+# Coverage
+coverage/
+
+# Environment files
+src/environments/environment*.ts
+!src/environments/environment.example.ts
+
+# npm/yarn/pnpm logs
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# Package manager files
+.npm/
+.yarn/
+.pnpm-store/
+
+# =========================================================
+# Testing / Reports
+# =========================================================
+
+test-results/
+playwright-report/
+blob-report/
+.nyc_output/
+
+# =========================================================
+# Project-specific generated files
+# =========================================================
+
+uploads/
+artifacts/
+reports/
+tempclonedir/
+agentguardTesting/
