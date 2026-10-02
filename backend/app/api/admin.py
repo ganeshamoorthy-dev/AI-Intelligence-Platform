@@ -44,3 +44,27 @@ async def reset_database(
         logger.error(f"Failed to reset database: {e}")
         await db.rollback()
         raise HTTPException(status_code=500, detail=f"Failed to reset database: {str(e)}")
+
+@router.delete("/jobs")
+async def clear_jobs(db: AsyncSession = Depends(get_db)):
+    """
+    Cleans up all review jobs (ReviewRuns) and PullRequests,
+    but keeps Projects, SCM Accounts, Webhooks, and Settings intact.
+    """
+    try:
+        from app.db.models import ReviewRun, PullRequest
+        
+        logger.warning("Deleting all ReviewRuns and PullRequests...")
+        
+        # We delete PullRequest, which will cascade to ReviewRun and ReviewFinding
+        # If cascading is not fully configured at the DB engine level, we can delete manually:
+        await db.execute(ReviewRun.__table__.delete())
+        await db.execute(PullRequest.__table__.delete())
+        
+        await db.commit()
+        return {"status": "success", "message": "All jobs and findings have been cleared. SCM integrations remain intact."}
+        
+    except Exception as e:
+        logger.error(f"Failed to clear jobs: {e}")
+        await db.rollback()
+        raise HTTPException(status_code=500, detail=f"Failed to clear jobs: {str(e)}")
