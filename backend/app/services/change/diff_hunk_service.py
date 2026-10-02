@@ -1,13 +1,10 @@
-import logging
 import re
-from typing import Dict, Set
+from typing import Dict, List, Set
 
-logger = logging.getLogger(__name__)
-
-class ChangedSymbolService:
-    def parse_diff(self, diff_text: str) -> Dict[str, Set[int]]:
+class DiffHunkService:
+    def extract_changed_lines(self, diff_text: str) -> Dict[str, List[int]]:
         """
-        Parses a unified diff and returns a mapping of file paths to a set of changed line numbers.
+        Parses a unified diff and returns a mapping of file paths to a list of changed line numbers.
         """
         changed_lines: Dict[str, Set[int]] = {}
         
@@ -36,4 +33,4 @@ class ChangedSymbolService:
                 elif not line.startswith('\\ No newline'):
                     current_line_num += 1
                     
-        return changed_lines
+        return {k: sorted(list(v)) for k, v in changed_lines.items()}

@@ -27,3 +27,17 @@ class ScmProvider(ABC):
         Fetches the raw file diff string for the given Pull Request.
         """
         pass
+
+    @abstractmethod
+    async def publish_review(self, repo_full_name: str, pr_number: int, findings: list) -> None:
+        """
+        Publishes the AI findings as inline comments on the Pull Request.
+        """
+        pass
+
+    @abstractmethod
+    async def commit_fix(self, repo_full_name: str, branch_name: str, file_path: str, new_content: str, message: str) -> None:
+        """
+        Commits a fix directly to the Pull Request branch.
+        """
+        pass

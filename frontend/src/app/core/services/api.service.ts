@@ -24,12 +24,26 @@ export class ApiService {
   getMetrics(): Observable<DashboardMetrics> {
     if (this.useMock) {
       return of({
-        total_projects: 3,
-        active_jobs: 1,
-        total_issues_found: 24,
-        avg_latency_ms: 8400,
-        total_tokens_used: 1250000
-      });
+      total_projects: 4,
+      active_jobs: 2,
+      total_issues_found: 156,
+      avg_latency_ms: 45000,
+      total_tokens_used: 1250000,
+      charts: {
+        issues_by_category: {
+          "security": 45,
+          "logic": 80,
+          "performance": 20,
+          "style": 11
+        },
+        issues_by_severity: {
+          "critical": 12,
+          "high": 34,
+          "medium": 70,
+          "low": 40
+        }
+      }
+    }).pipe(delay(500));
     }
     return this.http.get<DashboardMetrics>(`${this.apiUrl}/dashboard/metrics`).pipe(
       catchError(err => {
@@ -69,7 +83,11 @@ export class ApiService {
           author: 'dev-user',
           repo_name: 'acme/auth-service',
           status: 'completed',
-          commit_sha: 'a1b2c3d'
+          commit_sha: 'a1b2c3d',
+          changed_files_count: 4,
+          affected_files_count: 9,
+          findings_count: 6,
+          risk_level: 'medium'
         },
         blast_radius_summary: "This change impacts the core authentication flow. It introduces a risk to 3 downstream services.",
         impact_graph_data: { 
@@ -81,7 +99,22 @@ export class ApiService {
           edges: [
             { data: { source: 'n2', target: 'n1', type: 'calls' } },
             { data: { source: 'n1', target: 'n3', type: 'contains' } }
-          ] 
+          ],
+          review_context: {
+            context_summary: "Review includes 2 changed symbols, impacting 1 downstream caller.",
+            direct_callers: [
+              { id: 'n2', label: 'UserController', source_file: 'src/UserController.java' }
+            ],
+            direct_callees: [
+              { id: 'n3', label: 'LoginHandler', source_file: 'src/LoginHandler.java' }
+            ],
+            related_tests: [],
+            external_dependencies: [],
+            source_snippets: [
+              { node_id: 'n2', content: 'public class UserController {\n    public void login() {\n        authService.authenticate();\n    }\n}' },
+              { node_id: 'n3', content: 'public class LoginHandler {\n    public boolean handle() {\n        return true;\n    }\n}' }
+            ]
+          }
         },
         findings: [
           { id: 1, file_path: 'src/main.py', line_number: 45, severity: 'critical', category: 'security', description: 'Hardcoded API Key', suggested_fix: 'Use os.getenv()' },

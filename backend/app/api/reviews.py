@@ -133,3 +133,66 @@ async def get_review_results(run_id: int, db: AsyncSession = Depends(get_db)):
             } for f in findings
         ]
     }
+
+class ReviewSummary(BaseModel):
+    review_id: str
+    status: str
+    repository: str
+    pull_request_number: int
+
+    changed_files_count: int
+    changed_lines_count: int
+    changed_symbols_count: int
+
+    affected_files_count: int
+    affected_symbols_count: int
+    related_tests_count: int
+
+    risk_level: str
+    findings_count: int
+    high_severity_findings_count: int
+
+
+from sqlalchemy.orm import selectinload
+
+@router.get("/{run_id}/summary", response_model=ReviewSummary)
+async def get_review_summary(run_id: int, db: AsyncSession = Depends(get_db)):
+    result = await db.execute(
+        select(ReviewRun)
+        .options(selectinload(ReviewRun.pull_request).selectinload(PullRequest.project))
+        .filter_by(id=run_id)
+    )
+    job = result.scalars().first()
+    if not job:
+        raise HTTPException(status_code=404, detail="Review run not found")
+        
+    return ReviewSummary(
+        review_id=str(job.id),
+        status=job.status,
+        repository=job.pull_request.project.name,
+        pull_request_number=job.pull_request.pr_number,
+        changed_files_count=job.changed_files_count or 0,
+        changed_lines_count=job.changed_lines_count or 0,
+        changed_symbols_count=job.changed_symbols_count or 0,
+        affected_files_count=job.affected_files_count or 0,
+        affected_symbols_count=job.affected_symbols_count or 0,
+        related_tests_count=job.related_tests_count or 0,
+        risk_level=job.risk_level or "medium",
+        findings_count=job.findings_count or 0,
+        high_severity_findings_count=job.high_severity_findings_count or 0
+    )
+
+
+@router.get("/{run_id}/symbols")
+async def get_review_symbols(run_id: int, db: AsyncSession = Depends(get_db)):
+    result = await db.execute(select(ReviewRun).filter_by(id=run_id))
+    job = result.scalars().first()
+    if not job:
+        raise HTTPException(status_code=404, detail="Review run not found")
+        
+    if not job.impact_graph_data:
+        return {"changed_symbols": []}
+        
+    symbols = job.impact_graph_data.get("changed_symbols", [])
+    return {"changed_symbols": symbols}
+

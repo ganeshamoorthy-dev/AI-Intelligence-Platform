@@ -107,51 +107,55 @@ export class CreateScmAccountDialogComponent {
                 <mat-icon>add</mat-icon> Create Account
               </button>
             </div>
-            <div class="accounts-list">
-              <mat-card class="account-card mat-elevation-z1" *ngFor="let acc of accounts">
-                <mat-card-header>
-                  <div mat-card-avatar class="provider-icon">
-                    <mat-icon>{{ acc.provider === 'github' ? 'code' : 'dns' }}</mat-icon>
-                  </div>
-                  <mat-card-title>{{ acc.name }}</mat-card-title>
-                  <mat-card-subtitle>{{ acc.provider | titlecase }} Account</mat-card-subtitle>
-                </mat-card-header>
-                <mat-card-content>
-                  <p class="meta">Connected on {{ acc.created_at | date:'mediumDate' }}</p>
-                  
-                  <mat-divider style="margin: 1rem 0;"></mat-divider>
-                  
-                  <h4>Quick Actions</h4>
-                  <div class="quick-actions">
-                    <mat-form-field appearance="outline" class="webhook-input">
-                      <mat-label>Repository URL</mat-label>
-                      <input matInput [(ngModel)]="repoUrlToRegister[acc.id]" placeholder="https://github.com/owner/repo">
-                    </mat-form-field>
-                    <mat-form-field appearance="outline" class="model-select">
-                      <mat-label>LLM Model</mat-label>
-                      <mat-select [(ngModel)]="selectedModel[acc.id]">
-                        <mat-option value="">Default (Global)</mat-option>
-                        <mat-option value="ollama/qwen2.5-coder:7b">Qwen 2.5 Coder (Local)</mat-option>
-                        <mat-option value="openai/gpt-4o">GPT-4o (OpenAI)</mat-option>
-                        <mat-option value="gemini/gemini-1.5-pro">Gemini 1.5 Pro</mat-option>
-                      </mat-select>
-                    </mat-form-field>
-                    <button mat-stroked-button color="accent" (click)="registerWebhook(acc.id)" [disabled]="!repoUrlToRegister[acc.id] || isRegistering[acc.id]">
-                      <mat-spinner diameter="20" *ngIf="isRegistering[acc.id]"></mat-spinner>
-                      <span *ngIf="!isRegistering[acc.id]">Register Webhook</span>
-                    </button>
-                  </div>
-                </mat-card-content>
-              </mat-card>
-              
-              <div *ngIf="accounts.length === 0" class="empty-state">
-                <mat-icon class="empty-icon">link_off</mat-icon>
-                <h3>No accounts connected</h3>
-                <p>Connect an SCM account to start managing webhooks.</p>
-                <button mat-stroked-button color="primary" style="margin-top: 1rem;" (click)="openCreateDialog()">
-                  Connect your first account
-                </button>
-              </div>
+            <div class="table-container mat-elevation-z1" *ngIf="accounts.length > 0">
+              <table mat-table [dataSource]="accounts" class="full-width-table">
+                <ng-container matColumnDef="name">
+                  <th mat-header-cell *matHeaderCellDef> Account Name </th>
+                  <td mat-cell *matCellDef="let acc"> 
+                    <strong>{{ acc.name }}</strong>
+                  </td>
+                </ng-container>
+                <ng-container matColumnDef="provider">
+                  <th mat-header-cell *matHeaderCellDef> Provider </th>
+                  <td mat-cell *matCellDef="let acc">
+                    <mat-chip>
+                      <mat-icon style="font-size: 16px; width: 16px; height: 16px; margin-right: 4px; vertical-align: middle;">{{ acc.provider === 'github' ? 'code' : 'dns' }}</mat-icon>
+                      {{ acc.provider | titlecase }}
+                    </mat-chip>
+                  </td>
+                </ng-container>
+                <ng-container matColumnDef="created">
+                  <th mat-header-cell *matHeaderCellDef> Connected On </th>
+                  <td mat-cell *matCellDef="let acc"> {{ acc.created_at | date:'mediumDate' }} </td>
+                </ng-container>
+                <ng-container matColumnDef="actions">
+                  <th mat-header-cell *matHeaderCellDef> Register Webhook </th>
+                  <td mat-cell *matCellDef="let acc" style="padding: 8px;">
+                    <div style="display: flex; gap: 8px; align-items: center;">
+                      <mat-form-field appearance="outline" style="margin-bottom: -1.25em; width: 250px;">
+                        <mat-label>Repository URL</mat-label>
+                        <input matInput [(ngModel)]="repoUrlToRegister[acc.id]" placeholder="https://github.com/owner/repo">
+                      </mat-form-field>
+                      <button mat-stroked-button color="accent" (click)="registerWebhook(acc.id)" [disabled]="!repoUrlToRegister[acc.id] || isRegistering[acc.id]">
+                        <mat-spinner diameter="20" *ngIf="isRegistering[acc.id]"></mat-spinner>
+                        <span *ngIf="!isRegistering[acc.id]">Register</span>
+                      </button>
+                    </div>
+                  </td>
+                </ng-container>
+
+                <tr mat-header-row *matHeaderRowDef="['name', 'provider', 'created', 'actions']"></tr>
+                <tr mat-row *matRowDef="let row; columns: ['name', 'provider', 'created', 'actions'];"></tr>
+              </table>
+            </div>
+            
+            <div *ngIf="accounts.length === 0" class="empty-state">
+              <mat-icon class="empty-icon">link_off</mat-icon>
+              <h3>No accounts connected</h3>
+              <p>Connect an SCM account to start managing webhooks.</p>
+              <button mat-stroked-button color="primary" style="margin-top: 1rem;" (click)="openCreateDialog()">
+                Connect your first account
+              </button>
             </div>
           </div>
         </mat-tab>

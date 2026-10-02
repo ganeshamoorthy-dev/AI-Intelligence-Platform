@@ -84,6 +84,11 @@ class Project(Base):
     webhook_secret: Mapped[Optional[str]] = mapped_column(String(255)) # Legacy, keeping for backwards compat during migration
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     
+    # Phase 8: Project-level Review Policies
+    ignore_paths: Mapped[Optional[str]] = mapped_column(Text, default="")
+    review_mode: Mapped[str] = mapped_column(String(50), default="standard")
+    focus_categories: Mapped[Optional[str]] = mapped_column(Text, default="")
+    
     scm_account: Mapped[Optional["ScmAccount"]] = relationship(back_populates="projects")
     webhooks: Mapped[List["ScmWebhook"]] = relationship(back_populates="project", cascade="all, delete-orphan")
     pull_requests: Mapped[List["PullRequest"]] = relationship(back_populates="project", cascade="all, delete-orphan")
@@ -120,6 +125,15 @@ class ReviewRun(Base):
     total_tokens: Mapped[Optional[int]] = mapped_column(Integer)
     error_message: Mapped[Optional[str]] = mapped_column(Text)
     blast_radius_summary: Mapped[Optional[str]] = mapped_column(Text)
+    changed_files_count: Mapped[Optional[int]] = mapped_column(Integer, default=0)
+    changed_lines_count: Mapped[Optional[int]] = mapped_column(Integer, default=0)
+    changed_symbols_count: Mapped[Optional[int]] = mapped_column(Integer, default=0)
+    affected_files_count: Mapped[Optional[int]] = mapped_column(Integer, default=0)
+    affected_symbols_count: Mapped[Optional[int]] = mapped_column(Integer, default=0)
+    related_tests_count: Mapped[Optional[int]] = mapped_column(Integer, default=0)
+    risk_level: Mapped[Optional[str]] = mapped_column(String(50))
+    findings_count: Mapped[Optional[int]] = mapped_column(Integer, default=0)
+    high_severity_findings_count: Mapped[Optional[int]] = mapped_column(Integer, default=0)
     impact_graph_data: Mapped[Optional[JSON]] = mapped_column(JSON)
     diff_data: Mapped[Optional[str]] = mapped_column(Text)
     
@@ -137,6 +151,9 @@ class ReviewFinding(Base):
     category: Mapped[str] = mapped_column(String(255)) # e.g. security, performance, logic, style
     description: Mapped[str] = mapped_column(Text)
     suggested_fix: Mapped[Optional[str]] = mapped_column(Text)
+    evidence: Mapped[Optional[str]] = mapped_column(Text)          # Phase 7: Supporting code evidence
+    why_it_matters: Mapped[Optional[str]] = mapped_column(Text)    # Phase 7: Explanation of impact
+    confidence: Mapped[Optional[str]] = mapped_column(String(50))  # Phase 7: e.g. High, Medium, Low
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     
     review_run: Mapped["ReviewRun"] = relationship(back_populates="findings")

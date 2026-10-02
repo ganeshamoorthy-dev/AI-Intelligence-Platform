@@ -33,25 +33,6 @@ class BaseRepository(Generic[ModelType]):
         result = await self.session.execute(select(self.model).filter(self.model.id == id))
         return result.scalars().first()
 
-    async def get_multi(self, *, skip: int = 0, limit: int = 100) -> List[ModelType]:
-        """
-        Retrieves a paginated list of entities.
-        Spring Boot Analogy: `findAll(PageRequest.of(page, size))`
-        """
-        result = await self.session.execute(select(self.model).offset(skip).limit(limit))
-        return result.scalars().all()
-
-    async def create(self, *, obj_in: dict) -> ModelType:
-        """
-        Creates and persists a new entity.
-        Spring Boot Analogy: `save(entity)` (when inserting a new record)
-        """
-        db_obj = self.model(**obj_in)
-        self.session.add(db_obj)
-        await self.session.commit()
-        await self.session.refresh(db_obj)
-        return db_obj
-
     async def update(self, *, db_obj: ModelType, obj_in: dict) -> ModelType:
         """
         Updates an existing entity with new values.

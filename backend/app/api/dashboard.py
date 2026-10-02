@@ -33,12 +33,31 @@ async def get_metrics(db: AsyncSession = Depends(get_db)):
     
     total_tokens = await db.scalar(select(func.sum(ReviewRun.total_tokens)))
     
+    # Phase 15: Historical Chart Data
+    # 1. Issues by Category
+    category_counts_result = await db.execute(
+        select(ReviewFinding.category, func.count(ReviewFinding.id))
+        .group_by(ReviewFinding.category)
+    )
+    issues_by_category = {row[0]: row[1] for row in category_counts_result.all() if row[0]}
+    
+    # 2. Issues by Severity
+    severity_counts_result = await db.execute(
+        select(ReviewFinding.severity, func.count(ReviewFinding.id))
+        .group_by(ReviewFinding.severity)
+    )
+    issues_by_severity = {row[0]: row[1] for row in severity_counts_result.all() if row[0]}
+    
     return {
         "total_projects": total_projects or 0,
         "active_jobs": active_jobs or 0,
         "total_issues_found": total_issues or 0,
         "avg_latency_ms": int(avg_latency),
-        "total_tokens_used": total_tokens or 0
+        "total_tokens_used": total_tokens or 0,
+        "charts": {
+            "issues_by_category": issues_by_category,
+            "issues_by_severity": issues_by_severity
+        }
     }
 
 @router.get("/jobs")
@@ -111,7 +130,16 @@ async def get_job_findings(job_id: int, db: AsyncSession = Depends(get_db)):
             "latency_ms": run.latency_ms,
             "total_tokens": run.total_tokens,
             "input_tokens": run.input_tokens,
-            "output_tokens": run.output_tokens
+            "output_tokens": run.output_tokens,
+            "changed_files_count": run.changed_files_count or 0,
+            "changed_lines_count": run.changed_lines_count or 0,
+            "changed_symbols_count": run.changed_symbols_count or 0,
+            "affected_files_count": run.affected_files_count or 0,
+            "affected_symbols_count": run.affected_symbols_count or 0,
+            "related_tests_count": run.related_tests_count or 0,
+            "risk_level": run.risk_level or "medium",
+            "findings_count": run.findings_count or 0,
+            "high_severity_findings_count": run.high_severity_findings_count or 0
         },
         "blast_radius_summary": run.blast_radius_summary,
         "impact_graph_data": run.impact_graph_data,
@@ -124,7 +152,10 @@ async def get_job_findings(job_id: int, db: AsyncSession = Depends(get_db)):
                 "severity": f.severity.value if hasattr(f.severity, 'value') else str(f.severity),
                 "category": f.category,
                 "description": f.description,
-                "suggested_fix": f.suggested_fix
+                "suggested_fix": f.suggested_fix,
+                "evidence": f.evidence,
+                "why_it_matters": f.why_it_matters,
+                "confidence": f.confidence
             } for f in findings
         ]
     }
