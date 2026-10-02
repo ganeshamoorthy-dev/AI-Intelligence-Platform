@@ -187,14 +187,34 @@ class GraphTraversalService:
             relevant_node_ids = final_ids
 
         # --------------------------------------------------
-        # 3. Copy selected nodes
+        # 3. Copy selected nodes and generate explanations (Phase 5)
         # --------------------------------------------------
         filtered_nodes = []
         for node in nodes:
             node_id = node.get("id")
             if node_id in relevant_node_ids:
                 copied_node = deepcopy(node)
-                copied_node["modified"] = node_id in modified_node_ids
+                is_modified = node_id in modified_node_ids
+                copied_node["modified"] = is_modified
+                
+                # Basic Dependency Explanation
+                if is_modified:
+                    copied_node["included_because"] = "Directly modified in this Pull Request."
+                    copied_node["potential_impact"] = "High"
+                else:
+                    is_external = node.get("external") or node.get("is_external")
+                    f = str(node.get("source_file") or node.get("file") or node.get("path") or "")
+                    if "node_modules" in f or "venv" in f or "site-packages" in f or "framework" in f:
+                        is_external = True
+                        copied_node["is_external"] = True
+                        
+                    if is_external:
+                        copied_node["included_because"] = "External dependency invoked by application code."
+                        copied_node["potential_impact"] = "Low (External code is unlikely to break, but integration might)"
+                    else:
+                        copied_node["included_because"] = "Internal dependency interacting with modified code."
+                        copied_node["potential_impact"] = "Medium (Risk of downstream regression)"
+                        
                 filtered_nodes.append(copied_node)
 
         # --------------------------------------------------

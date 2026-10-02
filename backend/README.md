@@ -1,79 +1,339 @@
-# AI Developer Intelligence Platform - Backend Architecture
+# AI Developer Intelligence Platform — Backend
 
-Welcome to the backend of the AI Developer Intelligence Platform! 
+A **privacy-first, event-driven** backend that performs intelligent, context-aware code reviews on GitHub Pull Requests using a local LLM (Ollama) and an Abstract Syntax Tree (AST) pipeline.
 
-Since you are transitioning from **Java Spring Boot**, this guide translates Python/FastAPI concepts into terms and patterns you are already familiar with.
+---
 
-## Architecture Mapping: Spring Boot vs FastAPI
+## Table of Contents
+
+- [Overview](#overview)
+- [Architecture](#architecture)
+- [Tech Stack](#tech-stack)
+- [Directory Structure](#directory-structure)
+- [Database Models](#database-models)
+- [API Endpoints](#api-endpoints)
+- [Environment Variables](#environment-variables)
+- [Getting Started](#getting-started)
+- [Database Migrations](#database-migrations)
+- [Testing](#testing)
+- [Review Pipeline](#review-pipeline)
+
+---
+
+## Overview
+
+When a Pull Request is **opened** or **updated** on GitHub, the backend:
+
+1. Receives the event via a **GitHub Webhook**
+2. Queues a background **ReviewRun** job
+3. Clones an ephemeral workspace of the repository
+4. Parses the codebase into an **AST graph** using `graphify`
+5. Extracts the **diff** (changed files, lines, and symbols)
+6. Computes a **Blast Radius** (which other parts of the codebase are impacted)
+7. Sends all context to a **local LLM** (Ollama / qwen2.5-coder) for analysis
+8. Saves the **findings** to PostgreSQL and publishes a review comment back to GitHub
+
+---
+
+## Architecture
 
 The backend follows a strict **Clean Architecture** (layered architecture).
 
-| Concept | Java Spring Boot | Python FastAPI |
-| :--- | :--- | :--- |
-| **Framework** | Spring Boot (Tomcat, Blocking/Reactive) | FastAPI (Starlette/Uvicorn, Asynchronous) |
-| **Controllers** | `@RestController`, `@RequestMapping` | `APIRouter()`, `@router.post("/path")` |
-| **Dependency Injection** | `@Autowired`, `@Bean`, ApplicationContext | `Depends()`, explicit parameter passing |
-| **Data Validation/DTOs**| Record Classes, `@Valid`, Jackson | Pydantic Models (`BaseModel`) |
-| **ORM Framework** | Hibernate / JPA | SQLAlchemy 2.0 |
-| **Entity Mapping** | `@Entity`, `@Id`, `@Column` | `DeclarativeBase`, `Mapped`, `mapped_column` |
-| **Data Access Layer** | `JpaRepository<T, ID>` | `BaseRepository` (Generic Custom Class) |
-| **Database Migrations** | Flyway / Liquibase | Alembic |
-| **Background Tasks** | `@Scheduled`, `@Async`, Quartz | `asyncio` loops, Celery (removed here for native poller) |
+```
+HTTP Request / Webhook
+        │
+        ▼
+  ┌─────────────┐
+  │   API Layer │  (app/api/) — FastAPI Routers
+  └──────┬──────┘
+         │ calls
+         ▼
+  ┌─────────────┐
+  │  Service    │  (app/services/) — Business Logic
+  │  Layer      │
+  └──────┬──────┘
+         │ reads/writes
+         ▼
+  ┌─────────────┐
+  │  Repository │  (app/repositories/) — Data Access
+  │  Layer      │
+  └──────┬──────┘
+         │ uses
+         ▼
+  ┌─────────────┐
+  │  DB Models  │  (app/db/models.py) — SQLAlchemy Entities
+  └─────────────┘
+```
+
+### Spring Boot Analogy
+
+| Concept | Spring Boot | FastAPI Equivalent |
+|:---|:---|:---|
+| Framework | Spring Boot (Tomcat) | FastAPI (Uvicorn, Async) |
+| Controllers | `@RestController` | `APIRouter()` |
+| Dependency Injection | `@Autowired` | `Depends()` |
+| DTOs / Validation | `@Valid`, Jackson | Pydantic `BaseModel` |
+| ORM | Hibernate / JPA | SQLAlchemy 2.0 |
+| Entities | `@Entity`, `@Column` | `DeclarativeBase`, `mapped_column` |
+| Repositories | `JpaRepository<T, ID>` | `BaseRepository` (custom generic) |
+| Database Migrations | Flyway / Liquibase | Alembic |
+| Background Tasks | `@Scheduled`, Quartz | `asyncio` polling loop |
+
+---
+
+## Tech Stack
+
+| Technology | Purpose |
+|:---|:---|
+| **FastAPI** | Async HTTP framework and API layer |
+| **Uvicorn** | ASGI server |
+| **PostgreSQL** | Primary relational database |
+| **SQLAlchemy 2.0** | Async ORM (with `asyncpg` driver) |
+| **Alembic** | Database schema migrations |
+| **Pydantic v2** | Request/response validation and settings |
+| **LangChain + Ollama** | LLM inference (`qwen2.5-coder:7b` by default) |
+| **graphify** | AST & dependency graph generation for Python/JS codebases |
+| **httpx** | Async HTTP client (for GitHub API calls) |
+| **pytest** | Test runner |
 
 ---
 
 ## Directory Structure
 
-```text
-backend/
+```
+Backend/
 ├── app/
-│   ├── api/            # Controllers (FastAPI Routers handling HTTP requests)
-│   ├── core/           # Configuration (application.properties equivalent)
-│   ├── db/             # Database connection setup (DataSource / EntityManager setup)
-│   ├── models/         # SQLAlchemy Entities (JPA @Entity classes)
-│   ├── schemas/        # Pydantic DTOs (Request/Response payload structures)
-│   ├── repositories/   # Data Access Layer (Spring Data Repositories)
-│   ├── services/       # Business Logic Layer (@Service classes)
-│   ├── workers/        # Background polling processes (@Scheduled tasks)
-│   └── utils/          # Helper functions
+│   ├── api/                    # HTTP Controllers (FastAPI Routers)
+│   │   ├── dashboard.py        # Metrics and job listing
+│   │   ├── github.py           # GitHub repo & PR listing
+│   │   ├── ide.py              # IDE integration endpoints
+│   │   ├── reviews.py          # Manual review trigger
+│   │   ├── scm_accounts.py     # SCM account management
+│   │   ├── settings.py         # Platform settings (LLM keys, config)
+│   │   └── webhooks.py         # GitHub Webhook receiver
+│   ├── core/
+│   │   ├── config.py           # App settings via pydantic-settings (.env)
+│   │   └── security.py         # API key verification middleware
+│   ├── db/
+│   │   ├── models.py           # SQLAlchemy ORM entity definitions
+│   │   └── session.py          # Async DB session factory
+│   ├── repositories/
+│   │   ├── base.py             # Generic BaseRepository<T>
+│   │   └── job_repo.py         # ReviewRun-specific queries
+│   ├── schemas/
+│   │   └── webhooks.py         # Pydantic schemas for webhook payloads
+│   ├── services/
+│   │   ├── review/
+│   │   │   └── orchestrator.py # Core AI review pipeline orchestrator
+│   │   ├── change/             # Diff parsing and symbol change detection
+│   │   ├── context/            # Context engine (Blast Radius builder)
+│   │   ├── graph/              # AST graph traversal and source extraction
+│   │   ├── graphify/           # graphify CLI wrapper (AST parsing)
+│   │   ├── llm/                # LLM inference via LangChain + Ollama
+│   │   ├── prompt/             # LLM prompt templates
+│   │   ├── scm/                # SCM provider abstraction (GitHub, GitLab)
+│   │   └── workspace/          # Ephemeral Git clone manager
+│   ├── workers/
+│   │   └── job_poller.py       # Background asyncio loop — polls pending jobs
+│   └── main.py                 # Application entrypoint, router registration
+├── alembic/                    # Database migration scripts
+├── alembic.ini                 # Alembic configuration
+├── requirements.txt            # Python dependencies
+├── init_db.py                  # One-time DB initializer script
+└── .env                        # Environment variables (not committed)
 ```
 
 ---
 
-## Core Technologies Explained
+## Database Models
 
-### 1. FastAPI (The Controller Layer)
-In Spring Boot, you use `@RestController`. In FastAPI, you create an `APIRouter` and use decorators like `@router.post(...)`. FastAPI automatically parses JSON bodies into Python objects using Pydantic, similar to how Jackson deserializes JSON into Java objects.
-
-### 2. Pydantic (The DTO Layer)
-Pydantic is used for data validation. A Pydantic `BaseModel` guarantees that the incoming JSON payload matches the exact types you specified. It's equivalent to combining Java DTOs with `javax.validation` annotations (like `@NotNull`).
-
-### 3. Dependency Injection (`Depends`)
-Spring uses the IOC container and `@Autowired` to magically wire services and repositories together. FastAPI is more explicit. You declare dependencies directly in the endpoint signature using `Depends(dependency_function)`. FastAPI will execute the function and inject the result (e.g. providing a database session for every request).
-
-### 4. SQLAlchemy 2.0 (The ORM Layer)
-SQLAlchemy is the Python equivalent of Hibernate. In version 2.0, it uses Python type hints (`Mapped[str]`) to generate database schemas, similar to JPA's `@Column`. We use `asyncpg` to make database interactions fully asynchronous.
-
-### 5. Repository Pattern
-To keep the codebase decoupled, we don't query the database directly in the controller or service. Instead, we created a generic `BaseRepository` class that mimics `JpaRepository`'s `findById`, `save`, and `deleteById` methods.
+| Model | Table | Description |
+|:---|:---|:---|
+| `PlatformSettings` | `platform_settings` | Global LLM API keys, severity threshold, custom instructions |
+| `ScmAccount` | `scm_accounts` | GitHub/GitLab/Bitbucket OAuth tokens |
+| `ScmWebhook` | `scm_webhooks` | Per-project webhook registration and LLM model override |
+| `Project` | `projects` | Registered repositories with review policies |
+| `PullRequest` | `pull_requests` | Tracked pull requests per project |
+| `ReviewRun` | `review_runs` | A single AI review job (pending → processing → completed) |
+| `ReviewFinding` | `review_findings` | Individual issues found by the LLM (file, line, severity, category) |
 
 ---
 
-## How to Run
+## API Endpoints
 
-1. **Install Dependencies**:
-   ```bash
-   pip install -r requirements.txt
-   ```
-2. **Start the API Server**:
-   ```bash
-   uvicorn app.main:app --reload
-   ```
-### 4. Simulating a Webhook (Consuming the API)
+All endpoints (except webhooks) require an API key via the `X-API-Key` header.
 
-To test the system locally without actual GitHub events, you can simulate a GitHub pull request event using `curl` (or Postman).
+| Method | Path | Description |
+|:---|:---|:---|
+| `GET` | `/api/v1/health` | Health check (DB + LLM connectivity) |
+| `GET` | `/api/v1/dashboard/metrics` | Aggregated platform metrics |
+| `GET` | `/api/v1/dashboard/jobs` | Recent review job list |
+| `GET` | `/api/v1/dashboard/jobs/{id}/findings` | Findings for a specific job |
+| `POST` | `/api/v1/reviews/trigger` | Manually trigger a PR review by URL |
+| `POST` | `/api/v1/webhooks/github` | GitHub webhook receiver (HMAC-verified) |
+| `GET` | `/api/v1/github/repos` | List GitHub repositories for a linked account |
+| `GET` | `/api/v1/github/repos/{owner}/{repo}/pulls` | List open PRs for a repository |
+| `GET` | `/api/v1/scm-accounts` | List linked SCM accounts |
+| `POST` | `/api/v1/scm-accounts` | Add a new SCM account |
+| `DELETE` | `/api/v1/scm-accounts/{id}` | Remove an SCM account |
+| `GET` | `/api/v1/settings` | Get platform settings |
+| `PUT` | `/api/v1/settings` | Update platform settings |
+| `GET` | `/api/v1/ide/review` | IDE integration — sync review endpoint |
 
-First, start your backend server (`uvicorn app.main:app --reload`). Then run this command in a new terminal:
+Interactive API docs: [http://localhost:8000/docs](http://localhost:8000/docs)
+
+---
+
+## Environment Variables
+
+Create a `.env` file in the `Backend/` directory:
+
+```env
+# Database
+POSTGRES_USER=postgres
+POSTGRES_PASSWORD=password
+POSTGRES_SERVER=localhost
+POSTGRES_PORT=5432
+POSTGRES_DB=ai_platform
+
+# GitHub Webhook
+GITHUB_WEBHOOK_SECRET=your_github_webhook_secret
+
+# LLM (Ollama running locally)
+OLLAMA_BASE_URL=http://localhost:11434
+LLM_MODEL=qwen2.5-coder:7b
+
+# Optional — Cloud LLM (overrides Ollama if set)
+OPENAI_API_KEY=
+GOOGLE_API_KEY=
+
+# File System
+GRAPHIFY_CLI_PATH=graphify
+WORKSPACE_BASE_DIR=D:\workspace\AI Intelligence Platform\tempclonedir
+```
+
+---
+
+## Getting Started
+
+### Prerequisites
+
+- Python 3.11+
+- PostgreSQL 15+
+- [Ollama](https://ollama.com/) running locally with `qwen2.5-coder:7b` pulled
+- [graphify](https://pypi.org/project/graphifyy/) CLI installed
+
+### 1. Create a Virtual Environment
+
+```bash
+python -m venv venv
+venv\Scripts\activate        # Windows
+# source venv/bin/activate   # macOS/Linux
+```
+
+### 2. Install Dependencies
+
+```bash
+pip install -r requirements.txt
+```
+
+### 3. Configure Environment
+
+Copy the example variables above into a `.env` file inside `Backend/`.
+
+### 4. Initialize the Database
+
+```bash
+# Run migrations
+alembic upgrade head
+
+# (Optional) Seed initial data
+python init_db.py
+```
+
+### 5. Start the Server
+
+```bash
+uvicorn app.main:app --reload
+```
+
+The server starts at **http://localhost:8000**.
+
+---
+
+## Database Migrations
+
+Alembic is used for schema migrations — equivalent to Flyway/Liquibase in Spring Boot.
+
+```bash
+# Generate a new migration after changing models.py
+alembic revision --autogenerate -m "describe your change"
+
+# Apply all pending migrations
+alembic upgrade head
+
+# Rollback last migration
+alembic downgrade -1
+```
+
+---
+
+## Testing
+
+```bash
+pytest
+```
+
+Additional test scripts for development:
+
+```bash
+# Test AST extraction on a local repo
+python test_extraction_simple.py
+
+# Test source context extraction
+python test_source_context.py
+```
+
+---
+
+## Review Pipeline
+
+The core AI review pipeline is orchestrated by [`ReviewService`](app/services/review/orchestrator.py):
+
+```
+1. Clone repo into ephemeral temp directory
+        │
+        ▼
+2. Parse codebase AST with graphify
+        │
+        ▼
+3. Fetch PR diff from GitHub API
+        │
+        ▼
+4. Identify changed symbols via ChangeAnalyzer
+        │
+        ▼
+5. Compute Blast Radius (graph traversal — depth-1, bidirectional)
+        │
+        ▼
+6. Extract source code snippets for context
+        │
+        ▼
+7. Build structured LLM context (ContextEngine)
+        │
+        ▼
+8. Run LLM inference (LangChain → Ollama / OpenAI / Gemini)
+        │
+        ▼
+9. Persist findings to PostgreSQL
+        │
+        ▼
+10. Publish review comment back to GitHub PR
+```
+
+---
+
+### Simulate a Webhook (Local Testing)
 
 ```bash
 curl -X POST http://localhost:8000/api/v1/webhooks/github \
@@ -94,4 +354,5 @@ curl -X POST http://localhost:8000/api/v1/webhooks/github \
     }
   }'
 ```
-*Note: Our current endpoint has HMAC signature verification (`x-hub-signature-256`), so if you send this raw payload, it will return a `401 Invalid HMAC signature`. To test locally, you can temporarily comment out lines 29-30 in `webhooks.py`.*
+
+> **Note:** If the project has a `webhook_secret` configured, the request must include a valid `x-hub-signature-256` header. For local testing, you can temporarily disable HMAC verification in [`webhooks.py`](app/api/webhooks.py).

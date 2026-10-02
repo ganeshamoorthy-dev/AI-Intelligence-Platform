@@ -1,4 +1,6 @@
-import { Component, ChangeDetectionStrategy, inject, OnInit, signal } from '@angular/core';
+import { Component, ChangeDetectionStrategy, inject, OnInit, OnDestroy, signal } from '@angular/core';
+import { Subject, interval } from 'rxjs';
+import { takeUntil, switchMap } from 'rxjs/operators';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { MatTableModule } from '@angular/material/table';
@@ -275,8 +277,23 @@ export class JobsComponent implements OnInit {
   jobs = signal<any[]>([]);
   displayedColumns: string[] = ['id', 'repo_name', 'pr', 'status', 'started_at', 'completed_at', 'latency', 'tokens', 'action'];
 
+  private destroy$ = new Subject<void>();
+
   ngOnInit() {
     this.loadJobs();
+    
+    // Poll for jobs every 5 seconds
+    interval(5000).pipe(
+      takeUntil(this.destroy$),
+      switchMap(() => this.apiService.getRecentJobs())
+    ).subscribe(data => {
+      this.jobs.set(data || []);
+    });
+  }
+  
+  ngOnDestroy() {
+    this.destroy$.next();
+    this.destroy$.complete();
   }
   
   loadJobs() {

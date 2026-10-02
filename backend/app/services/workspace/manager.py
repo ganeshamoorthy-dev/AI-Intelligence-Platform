@@ -1,4 +1,3 @@
-import tempfile
 import subprocess
 import shutil
 from pathlib import Path
@@ -13,21 +12,36 @@ class WorkspaceManager:
     Manages ephemeral Git workspaces for PR reviews.
     Uses async context managers for guaranteed cleanup.
     """
-    def __init__(self, repo_url: str, branch_name: str = None, commit_sha: str = None):
+    def __init__(self, repo_url: str, branch_name: str = None, commit_sha: str = None, job_id: int = None):
         self.repo_url = repo_url
         self.branch_name = branch_name
         self.commit_sha = commit_sha
-        self.temp_dir = None
+        self.job_id = job_id
+        self.base_job_dir = None
+        self.temp_dir = None  # This will be the actual code directory
 
     async def __aenter__(self) -> Path:
+        import os
+        from app.core.config import settings
+        
+        # Use WORKSPACE_BASE_DIR from env, fallback to backend/jobs/
         if settings.WORKSPACE_BASE_DIR:
-            base_dir = Path(settings.WORKSPACE_BASE_DIR)
-            base_dir.mkdir(parents=True, exist_ok=True)
-            self.temp_dir = tempfile.mkdtemp(prefix="ai_reviewer_", dir=str(base_dir))
+            base_workspace_dir = settings.WORKSPACE_BASE_DIR
         else:
-            self.temp_dir = tempfile.mkdtemp(prefix="ai_reviewer_")
+            base_backend_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
+            base_workspace_dir = os.path.join(base_backend_dir, "jobs")
             
-        logger.info(f"Created temporary workspace at {self.temp_dir}")
+        # Create base job directory (e.g., <WORKSPACE_BASE_DIR>/<job_id>)
+        self.base_job_dir = os.path.join(base_workspace_dir, str(self.job_id) if self.job_id else "unknown")
+        
+        # Create 'workspace' (actual code) and 'debug' directories inside it
+        self.temp_dir = os.path.join(self.base_job_dir, "workspace")
+        debug_dir = os.path.join(self.base_job_dir, "debug")
+        
+        os.makedirs(self.temp_dir, exist_ok=True)
+        os.makedirs(debug_dir, exist_ok=True)
+            
+        logger.info(f"Created persistent job workspace at {self.base_job_dir}")
         
         try:
             # Clone specific branch to optimize fetch time
@@ -63,6 +77,8 @@ class WorkspaceManager:
         await self._cleanup()
         
     async def _cleanup(self):
+        # Only clean up the actual code (workspace dir) to save disk space.
+        # We intentionally leave the debug_dir intact so developers can inspect the LLM outputs!
         if self.temp_dir and Path(self.temp_dir).exists():
             shutil.rmtree(self.temp_dir, ignore_errors=True)
-            logger.info(f"Cleaned up workspace at {self.temp_dir}")
+            logger.info(f"Cleaned up actual code at {self.temp_dir}, preserved debug outputs.")

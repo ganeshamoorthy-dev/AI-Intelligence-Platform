@@ -13,68 +13,89 @@ import { toSignal } from '@angular/core/rxjs-interop';
 import { computed } from '@angular/core';
 import { ApiService } from '../../core/services/api.service';
 import { ActivatedRoute } from '@angular/router';
-import { switchMap } from 'rxjs/operators';
-import { of } from 'rxjs';
+import { switchMap, takeWhile } from 'rxjs/operators';
+import { of, timer } from 'rxjs';
 import { Network } from 'vis-network';
 import { MatTabsModule } from '@angular/material/tabs';
+import { MatExpansionModule } from '@angular/material/expansion';
 
 @Component({
   selector: 'app-reviews',
   standalone: true,
-  imports: [CommonModule, FormsModule, MatTableModule, MatChipsModule, MatCardModule, MatIconModule, MatButtonModule, MatSidenavModule, MatDividerModule, MatButtonToggleModule, MatTabsModule],
+  imports: [CommonModule, FormsModule, MatTableModule, MatChipsModule, MatCardModule, MatIconModule, MatButtonModule, MatSidenavModule, MatDividerModule, MatButtonToggleModule, MatTabsModule, MatExpansionModule],
   changeDetection: ChangeDetectionStrategy.Default,
   template: `
-    <div *ngIf="reviewData() as data; else loading" class="review-container">
+    <ng-container *ngIf="reviewData() as data; else loading">
+      <div *ngIf="data.pr_metadata.status === 'completed' || data.pr_metadata.status === 'completed_publish_failed' || data.pr_metadata.status === 'failed'; else processing" class="review-container">
       
-      <!-- PR Header -->
-      <div class="pr-header" *ngIf="data.pr_metadata as pr">
-        <h1 class="mat-headline-3">
-          <mat-icon color="primary" class="pr-icon">merge_type</mat-icon>
-          #{{ pr.number }}: {{ pr.title }}
-        </h1>
-        <p class="pr-meta">
-          <strong>{{ pr.repo_name }}</strong> • by {{ pr.author }} • 
-          <mat-chip [color]="pr.status === 'completed' ? 'primary' : 'warn'" highlighted>{{ pr.status | uppercase }}</mat-chip>
-          • {{ pr.commit_sha | slice:0:7 }}
-        </p>
-        <p class="scm-meta">
-          <mat-icon inline>account_circle</mat-icon> SCM Account: <strong>{{ pr.scm_account_name || 'Unknown' }}</strong> 
-          ({{ pr.scm_provider || 'github' }})
-        </p>
+      <!-- Phase 1 PR Header (Compacted) -->
+      <div class="pr-header mat-elevation-z1" *ngIf="data.pr_metadata as pr" style="background: white; border-radius: 8px; overflow: hidden; margin-bottom: 12px; display: flex; justify-content: space-between; align-items: center; padding: 1rem 1.5rem;">
+        <div>
+          <div style="color: #666; font-size: 0.9rem; font-weight: 500; margin-bottom: 0.25rem;">Review #{{ pr.number }}</div>
+          <h1 style="margin: 0; font-size: 1.25rem;">{{ pr.repo_name }} / {{ pr.title }}</h1>
+        </div>
+        <div style="display: flex; align-items: center; gap: 1rem;">
+          <div style="font-size: 0.9rem; font-weight: 500; display: flex; align-items: center; gap: 0.5rem;">
+            Risk: 
+            <span [ngStyle]="{
+              'color': pr.risk_level === 'high' || pr.risk_level === 'critical' ? '#f44336' : (pr.risk_level === 'medium' ? '#ff9800' : '#4caf50'),
+              'text-transform': 'capitalize',
+              'font-weight': 'bold'
+            }">{{ pr.risk_level || 'Unknown' }}</span>
+          </div>
+          <mat-chip [color]="pr.status === 'completed' ? 'primary' : 'warn'" highlighted style="min-height: 24px; font-size: 0.85rem;">{{ pr.status | uppercase }}</mat-chip>
+        </div>
       </div>
 
-      <mat-tab-group animationDuration="0ms" (selectedTabChange)="onTabChange($event)">
+      <mat-tab-group animationDuration="0ms" class="review-tabs" (selectedTabChange)="onTabChange($event)">
         
         <!-- Tab 1: Overview -->
         <mat-tab label="Overview">
-          <div class="tab-content-padding">
-            <!-- Summary Cards -->
-            <div class="summary-cards-container">
-               <mat-card class="summary-card">
-                 <div class="summary-value">{{ treeData.length > 0 ? treeData.length : '?' }}</div>
-                 <div class="summary-label">Modified Nodes</div>
-               </mat-card>
-               <mat-card class="summary-card">
-                 <div class="summary-value">{{ tableEdgesData.length }}</div>
-                 <div class="summary-label">Impacted Connections</div>
-               </mat-card>
-               <mat-card class="summary-card">
-                 <div class="summary-value" style="color: #f44336">{{ data.findings?.length || 0 }}</div>
-                 <div class="summary-label">AI Findings</div>
-               </mat-card>
-               <mat-card class="summary-card">
-                 <div class="summary-value" style="color: #4caf50">{{ data.pr_metadata.latency_ms ? (data.pr_metadata.latency_ms / 1000).toFixed(1) + 's' : '-' }}</div>
-                 <div class="summary-label">Time Taken</div>
-               </mat-card>
-               <mat-card class="summary-card">
-                 <div class="summary-value" style="color: #9c27b0">{{ data.pr_metadata.input_tokens ? (data.pr_metadata.input_tokens | number) : '-' }}</div>
-                 <div class="summary-label">Input Tokens</div>
-               </mat-card>
-               <mat-card class="summary-card">
-                 <div class="summary-value" style="color: #673ab7">{{ data.pr_metadata.output_tokens ? (data.pr_metadata.output_tokens | number) : '-' }}</div>
-                 <div class="summary-label">Output Tokens</div>
-               </mat-card>
-            </div>
+          <ng-template matTabContent>
+            <div class="tab-content-padding" style="background: #fafafa; padding: 2rem;">
+               <!-- Metrics moved from Header -->
+               <div class="summary-cards-container" style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 1.5rem; margin-bottom: 1.5rem;">
+                  <mat-card class="summary-card mat-elevation-z1" style="padding: 1rem;">
+                     <div class="summary-value" style="color: #666;">{{ data.pr_metadata?.changed_files_count || 0 }}</div>
+                     <div class="summary-label">Changed Files</div>
+                  </mat-card>
+                  <mat-card class="summary-card mat-elevation-z1" style="padding: 1rem;">
+                     <div class="summary-value" style="color: #666;">{{ data.pr_metadata?.affected_files_count || 0 }}</div>
+                     <div class="summary-label">Affected Files</div>
+                  </mat-card>
+                  <mat-card class="summary-card mat-elevation-z1" style="padding: 1rem;">
+                     <div class="summary-value" [style.color]="data.pr_metadata?.findings_count > 0 ? '#f44336' : '#4caf50'">{{ data.pr_metadata?.findings_count || 0 }}</div>
+                     <div class="summary-label">Findings</div>
+                  </mat-card>
+               </div>
+
+               <!-- Original Overview Metrics -->
+               <div class="summary-cards-container">
+                 <mat-card class="summary-card">
+                   <div class="summary-value">{{ treeData.length > 0 ? treeData.length : '?' }}</div>
+                   <div class="summary-label">Modified Nodes</div>
+                 </mat-card>
+                 <mat-card class="summary-card">
+                   <div class="summary-value">{{ tableEdgesData.length }}</div>
+                   <div class="summary-label">Impacted Connections</div>
+                 </mat-card>
+                 <mat-card class="summary-card">
+                   <div class="summary-value" style="color: #f44336">{{ data.findings?.length || 0 }}</div>
+                   <div class="summary-label">AI Findings</div>
+                 </mat-card>
+                 <mat-card class="summary-card">
+                   <div class="summary-value" style="color: #4caf50">{{ data.pr_metadata.latency_ms ? (data.pr_metadata.latency_ms / 1000).toFixed(1) + 's' : '-' }}</div>
+                   <div class="summary-label">Time Taken</div>
+                 </mat-card>
+                 <mat-card class="summary-card">
+                   <div class="summary-value" style="color: #9c27b0">{{ data.pr_metadata.input_tokens ? (data.pr_metadata.input_tokens | number) : '-' }}</div>
+                   <div class="summary-label">Input Tokens</div>
+                 </mat-card>
+                 <mat-card class="summary-card">
+                   <div class="summary-value" style="color: #673ab7">{{ data.pr_metadata.output_tokens ? (data.pr_metadata.output_tokens | number) : '-' }}</div>
+                   <div class="summary-label">Output Tokens</div>
+                 </mat-card>
+               </div>
 
             <!-- Blast Radius Summary -->
             <mat-card class="blast-radius-card mat-elevation-z2" *ngIf="data.blast_radius_summary" style="margin-top: 2rem;">
@@ -85,45 +106,83 @@ import { MatTabsModule } from '@angular/material/tabs';
                 <p class="summary-text">{{ data.blast_radius_summary }}</p>
               </mat-card-content>
             </mat-card>
-          </div>
+            </div>
+          </ng-template>
         </mat-tab>
 
-        <!-- Tab 2: Code Diff -->
-        <mat-tab label="Code Diff">
-           <div class="tab-content-padding" style="background: #fafafa;">
-              <div *ngIf="parsedDiff().length === 0" style="padding: 4rem 2rem; text-align: center; color: #666;">
-                 <mat-icon style="font-size: 48px; width: 48px; height: 48px; margin-bottom: 1rem; color: #ccc;">code_off</mat-icon>
-                 <h2>No Diff Available</h2>
-                 <p>Try re-running the review to fetch the latest diff data.</p>
-              </div>
 
-              <div *ngFor="let file of parsedDiff()" class="diff-file-container mat-elevation-z1">
-                 <div class="diff-file-header">
-                    <mat-icon>insert_drive_file</mat-icon>
-                    <strong>{{ file.name }}</strong>
-                 </div>
-                 <div class="diff-file-content">
-                    <ng-container *ngFor="let line of file.lines">
-                       <div class="diff-line" [ngClass]="'diff-' + line.type">
-                          <div class="diff-line-number">{{ line.number || '' }}</div>
-                          <div class="diff-line-content">{{ line.content }}</div>
-                       </div>
-                       <div class="inline-finding" *ngIf="line.findings && line.findings.length > 0">
-                          <div *ngFor="let f of line.findings" class="inline-finding-item">
-                             <mat-icon color="warn">warning</mat-icon>
-                             <div style="flex: 1;">
-                               <strong>{{ f.severity | uppercase }}:</strong> {{ f.description }}
-                             </div>
-                          </div>
-                       </div>
-                    </ng-container>
-                 </div>
-              </div>
-           </div>
+
+        <!-- Tab 2: Findings -->
+        <mat-tab label="Findings">
+          <ng-template matTabContent>
+            <div class="tab-content-padding" style="background: #fafafa; padding: 2rem;">
+               <div *ngIf="data.findings.length === 0" style="text-align: center; color: #666; padding: 3rem;">
+                  <mat-icon style="font-size: 48px; width: 48px; height: 48px; color: #ccc;">check_circle_outline</mat-icon>
+                  <h2>No Issues Found</h2>
+                  <p>The AI reviewer didn't flag any issues for this pull request.</p>
+               </div>
+
+               <div style="display: flex; flex-direction: column; gap: 1.5rem; max-width: 900px; margin: 0 auto;">
+                  <mat-accordion multi>
+                    <mat-expansion-panel *ngFor="let group of groupedFindings()" [expanded]="true" class="mat-elevation-z1" style="margin-bottom: 1rem; border-radius: 8px; overflow: hidden;">
+                      <mat-expansion-panel-header style="background: #f8f9fa; border-bottom: 1px solid #e0e0e0;">
+                        <mat-panel-title style="font-family: monospace; font-size: 0.95rem; font-weight: 600; color: #333; display: flex; align-items: center; gap: 0.5rem;">
+                          <mat-icon style="color: #666; font-size: 20px; width: 20px; height: 20px;">description</mat-icon>
+                          {{ group.file_path }}
+                        </mat-panel-title>
+                        <mat-panel-description style="display: flex; justify-content: flex-end; align-items: center;">
+                          <mat-chip style="min-height: 20px; font-size: 0.75rem;">{{ group.findings.length }} finding(s)</mat-chip>
+                        </mat-panel-description>
+                      </mat-expansion-panel-header>
+
+                      <div style="padding: 1rem 0; display: flex; flex-direction: column; gap: 1rem;">
+                        <mat-card *ngFor="let element of group.findings" class="finding-card mat-elevation-z1" style="border-radius: 8px; overflow: hidden; border-left: 4px solid" [ngStyle]="{'border-left-color': getSeverityColor(element.severity)}">
+                           <mat-card-header style="padding: 1rem 1rem 0.5rem; display: flex; justify-content: space-between; align-items: flex-start;">
+                              <div style="display: flex; align-items: center; gap: 0.75rem;">
+                                 <div [ngStyle]="{'background': getSeverityColor(element.severity) + '22', 'color': getSeverityColor(element.severity)}" style="padding: 2px 8px; border-radius: 12px; font-weight: bold; text-transform: uppercase; font-size: 0.7rem; letter-spacing: 0.5px;">
+                                    {{element.severity}}
+                                 </div>
+                                 <mat-chip-set>
+                                    <mat-chip style="font-size: 0.7rem; height: 20px; min-height: 20px;">{{element.category}}</mat-chip>
+                                 </mat-chip-set>
+                                 <div *ngIf="element.confidence" style="font-size: 0.75rem; color: #666; display: flex; align-items: center; gap: 4px;">
+                                    <mat-icon style="font-size: 14px; width: 14px; height: 14px;">psychology</mat-icon> {{element.confidence}} Confidence
+                                 </div>
+                              </div>
+                              <div *ngIf="element.line_number" style="font-family: monospace; font-size: 0.8rem; background: #f0f0f0; padding: 2px 8px; border-radius: 4px; color: #333;">
+                                 Line {{element.line_number}}
+                              </div>
+                           </mat-card-header>
+
+                           <mat-card-content style="padding: 0 1rem 1rem;">
+                              <p style="font-size: 1rem; color: #222; margin: 0.75rem 0; line-height: 1.4;">{{element.description}}</p>
+
+                              <div *ngIf="element.why_it_matters" style="background: #f8f9fa; border-left: 3px solid #9c27b0; padding: 0.75rem; margin: 0.75rem 0; border-radius: 0 6px 6px 0;">
+                                 <strong style="color: #9c27b0; font-size: 0.8rem; text-transform: uppercase;">Why it matters</strong>
+                                 <p style="margin: 0.25rem 0 0; color: #444; font-size: 0.9rem;">{{element.why_it_matters}}</p>
+                              </div>
+
+                              <div *ngIf="element.evidence" style="margin-top: 1rem;">
+                                 <strong style="color: #555; font-size: 0.8rem; text-transform: uppercase;">Code Evidence</strong>
+                                 <pre style="background: #2d2d2d; color: #e0e0e0; padding: 0.75rem; border-radius: 6px; overflow-x: auto; font-size: 0.85rem; margin-top: 0.25rem; border: 1px solid #444;"><code>{{element.evidence}}</code></pre>
+                              </div>
+
+                              <div *ngIf="element.suggested_fix" style="margin-top: 1rem;">
+                                 <strong style="color: #2e7d32; font-size: 0.8rem; text-transform: uppercase;">Suggested Fix</strong>
+                                 <pre style="background: #f1f8e9; color: #1b5e20; padding: 0.75rem; border-radius: 6px; overflow-x: auto; font-size: 0.85rem; margin-top: 0.25rem; border: 1px solid #c5e1a5;"><code>{{element.suggested_fix}}</code></pre>
+                              </div>
+                           </mat-card-content>
+                        </mat-card>
+                      </div>
+                    </mat-expansion-panel>
+                  </mat-accordion>
+               </div>
+            </div>
+          </ng-template>
         </mat-tab>
 
-        <!-- Tab 3: Blast Radius -->
-        <mat-tab label="Blast Radius">
+        <!-- Tab 3: Dependencies -->
+        <mat-tab label="Dependencies">
           <ng-template matTabContent>
             <mat-drawer-container class="graph-drawer-container mat-elevation-z2" *ngIf="data.impact_graph_data" style="margin-top: 1rem;">
               <mat-drawer-content>
@@ -277,7 +336,7 @@ import { MatTabsModule } from '@angular/material/tabs';
                   </table>
                 </div>
               </mat-drawer-content>
-              <mat-drawer #drawer mode="side" position="end" class="details-drawer">
+              <mat-drawer #drawer mode="over" position="end" class="details-drawer">
                 <div class="drawer-header">
                   <h3>Node Details</h3>
                   <button mat-icon-button (click)="drawer.close()"><mat-icon>close</mat-icon></button>
@@ -329,42 +388,148 @@ import { MatTabsModule } from '@angular/material/tabs';
           </ng-template>
         </mat-tab>
 
-        <!-- Tab 4: AI Findings -->
-        <mat-tab label="AI Findings">
-          <div class="tab-content-padding">
-            <div class="table-container mat-elevation-z1">
-              <table mat-table [dataSource]="data.findings" class="full-width-table">
-                <ng-container matColumnDef="severity">
-                  <th mat-header-cell *matHeaderCellDef> Severity </th>
-                  <td mat-cell *matCellDef="let finding">
-                    <mat-chip [color]="finding.severity === 'critical' || finding.severity === 'high' ? 'warn' : 'primary'" highlighted>
-                      {{finding.severity | uppercase}}
-                    </mat-chip>
-                  </td>
-                </ng-container>
-                <ng-container matColumnDef="category">
-                  <th mat-header-cell *matHeaderCellDef> Category </th>
-                  <td mat-cell *matCellDef="let finding"> {{finding.category}} </td>
-                </ng-container>
-                <ng-container matColumnDef="file_path">
-                  <th mat-header-cell *matHeaderCellDef> Location </th>
-                  <td mat-cell *matCellDef="let finding" class="mono"> {{finding.file_path}}:{{finding.line_number}} </td>
-                </ng-container>
-                <ng-container matColumnDef="description">
-                  <th mat-header-cell *matHeaderCellDef> Description </th>
-                  <td mat-cell *matCellDef="let finding"> {{finding.description}} </td>
-                </ng-container>
-                <tr mat-header-row *matHeaderRowDef="displayedColumns"></tr>
-                <tr mat-row *matRowDef="let row; columns: displayedColumns;"></tr>
-              </table>
-            </div>
-          </div>
+        <!-- Tab 4: AI Context Explorer -->
+        <mat-tab label="AI Context">
+           <div class="tab-content-padding" style="background: #fafafa; padding: 2rem;">
+              <div *ngIf="!data.impact_graph_data?.review_context" style="text-align: center; color: #666; padding: 3rem;">
+                 <mat-icon style="font-size: 48px; width: 48px; height: 48px; color: #ccc;">visibility_off</mat-icon>
+                 <h2>Context Not Available</h2>
+                 <p>This review was processed before the Context Engine was enabled.</p>
+              </div>
+
+              <div *ngIf="data.impact_graph_data?.review_context as ctx">
+                 <div style="margin-bottom: 2rem; background: white; padding: 1.5rem; border-radius: 8px; border: 1px solid #e0e0e0;">
+                    <h3 style="margin-top: 0; color: #333; font-weight: 500;">What did the AI see?</h3>
+                    <p style="color: #555; margin-bottom: 0;">{{ ctx.context_summary }}</p>
+                 </div>
+
+                 <!-- Directly Changed Code -->
+                 <div *ngIf="ctx.source_snippets?.length > 0" class="context-section">
+                    <h4 class="context-section-title"><mat-icon>code</mat-icon> Included Source Code</h4>
+                    <mat-accordion>
+                       <mat-expansion-panel *ngFor="let snippet of ctx.source_snippets" class="mat-elevation-z1">
+                          <mat-expansion-panel-header>
+                             <mat-panel-title style="font-family: monospace; font-weight: 500;">
+                                {{ getShortLabel(snippet.node_id) }}
+                             </mat-panel-title>
+                          </mat-expansion-panel-header>
+                          <pre class="snippet-block"><code>{{ snippet.content }}</code></pre>
+                       </mat-expansion-panel>
+                    </mat-accordion>
+                 </div>
+
+                 <!-- Direct Callers -->
+                 <div *ngIf="ctx.direct_callers?.length > 0" class="context-section">
+                    <h4 class="context-section-title"><mat-icon>call_made</mat-icon> Direct Callers (Impacted)</h4>
+                    <mat-accordion>
+                       <mat-expansion-panel *ngFor="let node of ctx.direct_callers" class="mat-elevation-z1">
+                          <mat-expansion-panel-header>
+                             <mat-panel-title style="font-family: monospace; font-weight: 500;">
+                                {{ getShortLabel(node.label || node.id) }}
+                             </mat-panel-title>
+                             <mat-panel-description>
+                                {{ node.source_file || node.id }}
+                             </mat-panel-description>
+                          </mat-expansion-panel-header>
+                          <pre class="snippet-block"><code>{{ getSnippetForNode(node.id, ctx.source_snippets) }}</code></pre>
+                       </mat-expansion-panel>
+                    </mat-accordion>
+                 </div>
+
+                 <!-- Direct Callees -->
+                 <div *ngIf="ctx.direct_callees?.length > 0" class="context-section">
+                    <h4 class="context-section-title"><mat-icon>call_received</mat-icon> Direct Callees (Dependencies)</h4>
+                    <mat-accordion>
+                       <mat-expansion-panel *ngFor="let node of ctx.direct_callees" class="mat-elevation-z1">
+                          <mat-expansion-panel-header>
+                             <mat-panel-title style="font-family: monospace; font-weight: 500;">
+                                {{ getShortLabel(node.label || node.id) }}
+                             </mat-panel-title>
+                             <mat-panel-description>
+                                {{ node.source_file || node.id }}
+                             </mat-panel-description>
+                          </mat-expansion-panel-header>
+                          <pre class="snippet-block"><code>{{ getSnippetForNode(node.id, ctx.source_snippets) }}</code></pre>
+                       </mat-expansion-panel>
+                    </mat-accordion>
+                 </div>
+
+                 <!-- Related Tests -->
+                 <div *ngIf="ctx.related_tests?.length > 0" class="context-section">
+                    <h4 class="context-section-title"><mat-icon>bug_report</mat-icon> Related Tests</h4>
+                    <mat-accordion>
+                       <mat-expansion-panel *ngFor="let node of ctx.related_tests" class="mat-elevation-z1">
+                          <mat-expansion-panel-header>
+                             <mat-panel-title style="font-family: monospace; font-weight: 500;">
+                                {{ getShortLabel(node.label || node.id) }}
+                             </mat-panel-title>
+                             <mat-panel-description>
+                                {{ node.source_file || node.id }}
+                             </mat-panel-description>
+                          </mat-expansion-panel-header>
+                          <pre class="snippet-block"><code>{{ getSnippetForNode(node.id, ctx.source_snippets) }}</code></pre>
+                       </mat-expansion-panel>
+                    </mat-accordion>
+                 </div>
+                 
+                 <!-- Other Context -->
+                 <div *ngIf="ctx.external_dependencies?.length > 0" class="context-section">
+                    <h4 class="context-section-title"><mat-icon>public</mat-icon> External Dependencies</h4>
+                    <div style="display: flex; gap: 0.5rem; flex-wrap: wrap;">
+                       <mat-chip *ngFor="let node of ctx.external_dependencies">{{ getShortLabel(node.label || node.id) }}</mat-chip>
+                    </div>
+                 </div>
+              </div>
+           </div>
         </mat-tab>
 
+
+
+        <!-- Tab 4: Code -->
+        <mat-tab label="Code">
+           <div class="tab-content-padding" style="background: #fafafa;">
+              <div *ngIf="parsedDiff().length === 0" style="padding: 4rem 2rem; text-align: center; color: #666;">
+                 <mat-icon style="font-size: 48px; width: 48px; height: 48px; margin-bottom: 1rem; color: #ccc;">code_off</mat-icon>
+                 <h2>No Diff Available</h2>
+                 <p>Try re-running the review to fetch the latest diff data.</p>
+              </div>
+
+              <div *ngFor="let file of parsedDiff()" class="diff-file-container mat-elevation-z1">
+                 <div class="diff-file-header">
+                    <mat-icon>insert_drive_file</mat-icon>
+                    <strong>{{ file.name }}</strong>
+                 </div>
+                 <div class="diff-file-content">
+                    <ng-container *ngFor="let line of file.lines">
+                       <div class="diff-line" [ngClass]="'diff-' + line.type">
+                          <div class="diff-line-number">{{ line.number || '' }}</div>
+                          <div class="diff-line-content">{{ line.content }}</div>
+                       </div>
+                       <div class="inline-finding" *ngIf="line.findings && line.findings.length > 0">
+                          <div *ngFor="let f of line.findings" class="inline-finding-item">
+                             <mat-icon color="warn">warning</mat-icon>
+                             <div style="flex: 1;">
+                               <strong>{{ f.severity | uppercase }}:</strong> {{ f.description }}
+                             </div>
+                          </div>
+                       </div>
+                    </ng-container>
+                 </div>
+              </div>
+           </div>
+        </mat-tab>
       </mat-tab-group>
-    </div>
+      </div>
+      <ng-template #processing>
+        <div style="display: flex; flex-direction: column; align-items: center; justify-content: center; height: 50vh; gap: 2rem;">
+          <h2 style="color: #666; font-weight: 400; text-transform: uppercase; letter-spacing: 2px;">{{ data.pr_metadata.status }}</h2>
+        </div>
+      </ng-template>
+    </ng-container>
     <ng-template #loading>
-      <p>Loading review data...</p>
+      <div style="display: flex; justify-content: center; padding: 4rem;">
+        <p style="color: #999;">Fetching job data...</p>
+      </div>
     </ng-template>
   `,
   styles: [`
@@ -412,8 +577,8 @@ import { MatTabsModule } from '@angular/material/tabs';
     
     .cy-container { width: 100%; height: 440px; min-height: 400px; position: relative; display: block; }
     
-    .details-drawer { width: 350px; padding: 1rem; box-sizing: border-box; }
-    .drawer-header { display: flex; justify-content: space-between; align-items: center; }
+    .details-drawer { width: 650px; max-width: 90vw; padding: 1.5rem; box-sizing: border-box; border-left: 1px solid #e0e0e0; box-shadow: -4px 0 16px rgba(0,0,0,0.2); position: fixed !important; top: 0 !important; right: 0 !important; height: 100vh !important; z-index: 9999 !important; }
+    .drawer-header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 1rem; }
     .drawer-header h3 { margin: 0; }
     .node-finding { margin-top: 1rem; background: #fff3e0; padding: 0.5rem; border-radius: 4px; }
     
@@ -459,12 +624,32 @@ export class ReviewsComponent {
       switchMap(params => {
         const id = params.get('jobId');
         if (id) {
-          return this.apiService.getJobFindings(parseInt(id, 10));
+          return timer(0, 5000).pipe(
+            switchMap(() => this.apiService.getJobFindings(parseInt(id, 10))),
+            takeWhile(data => !data || !data.pr_metadata || (data.pr_metadata.status !== 'completed' && data.pr_metadata.status !== 'completed_publish_failed' && data.pr_metadata.status !== 'failed'), true)
+          );
         }
         return of(null);
       })
     )
-  ); 
+  );
+
+  groupedFindings = computed(() => {
+    const data = this.reviewData();
+    if (!data || !data.findings) return [];
+    
+    const groups: { [path: string]: any[] } = {};
+    for (const f of data.findings) {
+      const path = f.file_path || 'General';
+      if (!groups[path]) groups[path] = [];
+      groups[path].push(f);
+    }
+    
+    return Object.keys(groups).map(path => ({
+      file_path: path,
+      findings: groups[path]
+    })).sort((a, b) => a.file_path.localeCompare(b.file_path));
+  }); 
   
   parsedDiff = computed(() => {
     const data = this.reviewData();
@@ -538,12 +723,9 @@ export class ReviewsComponent {
      }
      
      // Generate Explanation (Milestone 5)
-     if (nodeData.modified) {
-         this.selectedNodeExplanation = "This symbol was directly modified in the Pull Request.";
-     } else if (this.isExternal(nodeData)) {
-         this.selectedNodeExplanation = "This is an external framework dependency referenced by the application code.";
-     } else {
-         this.selectedNodeExplanation = "This application symbol is a dependency (caller/callee) of a modified method and could be impacted by behavior changes.";
+     this.selectedNodeExplanation = nodeData.included_because || "No explanation available.";
+     if (nodeData.potential_impact) {
+         this.selectedNodeExplanation += ` Potential Impact: ${nodeData.potential_impact}`;
      }
      
      if (this.drawer) this.drawer.open();
@@ -688,12 +870,26 @@ export class ReviewsComponent {
 
   getGithubUrl(filePath: string, pr: any): string {
     if (!pr || !pr.repo_name) return '#';
-    // Clean up file path if it's an AST node id fallback
     let cleanPath = filePath.replace(/_/g, '/');
     if (filePath.includes('.java') || filePath.includes('.ts') || filePath.includes('.py')) {
         cleanPath = filePath;
     }
     return `https://github.com/${pr.repo_name}/blob/${pr.commit_sha}/${cleanPath}`;
+  }
+
+  getSnippetForNode(nodeId: string, snippets: any[]): string {
+    if (!snippets) return 'No source available';
+    const snippet = snippets.find(s => s.node_id === nodeId);
+    return snippet && snippet.content ? snippet.content.trim() : 'No source available';
+  }
+
+  getSeverityColor(severity: string): string {
+    const s = (severity || '').toLowerCase();
+    if (s === 'critical') return '#d32f2f'; // Red
+    if (s === 'high') return '#f44336'; // Light Red
+    if (s === 'medium') return '#ff9800'; // Orange
+    if (s === 'low') return '#4caf50'; // Green
+    return '#9e9e9e'; // Grey
   }
 
   ngAfterViewChecked() {

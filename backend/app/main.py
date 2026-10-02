@@ -27,12 +27,20 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-app.include_router(dashboard_router, prefix="/api/v1/dashboard", tags=["Dashboard"])
-app.include_router(github_router, prefix="/api/v1/github", tags=["GitHub"])
-app.include_router(reviews_router, prefix="/api/v1/reviews", tags=["Reviews"])
-app.include_router(webhooks_router, prefix="/api/v1/webhooks", tags=["Webhooks"])
-app.include_router(scm_accounts_router, prefix="/api/v1/scm-accounts", tags=["SCM Accounts"])
-app.include_router(settings_router, prefix="/api/v1/settings", tags=["Settings"])
+from fastapi import Depends
+from app.core.security import verify_api_key
+
+app.include_router(dashboard_router, prefix="/api/v1/dashboard", tags=["Dashboard"], dependencies=[Depends(verify_api_key)])
+app.include_router(github_router, prefix="/api/v1/github", tags=["GitHub"], dependencies=[Depends(verify_api_key)])
+app.include_router(reviews_router, prefix="/api/v1/reviews", tags=["Reviews"], dependencies=[Depends(verify_api_key)])
+app.include_router(webhooks_router, prefix="/api/v1/webhooks", tags=["Webhooks"]) # Webhooks often use their own HMAC signatures, so skip global API key here
+app.include_router(scm_accounts_router, prefix="/api/v1/scm-accounts", tags=["SCM Accounts"], dependencies=[Depends(verify_api_key)])
+app.include_router(settings_router, prefix="/api/v1/settings", tags=["Settings"], dependencies=[Depends(verify_api_key)])
+
+from app.api.ide import router as ide_router
+from app.api.admin import router as admin_router
+app.include_router(ide_router, prefix="/api/v1/ide", tags=["IDE Integration"], dependencies=[Depends(verify_api_key)])
+app.include_router(admin_router, prefix="/api/v1/admin", tags=["Admin"], dependencies=[Depends(verify_api_key)])
 
 @app.get("/api/v1/health")
 async def health_check(db: AsyncSession = Depends(get_db)):

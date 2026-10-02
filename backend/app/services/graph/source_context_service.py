@@ -5,7 +5,7 @@ from typing import Dict, Any, List
 logger = logging.getLogger(__name__)
 
 class SourceContextService:
-    def __init__(self, max_total_lines: int = 1200, max_lines_per_snippet: int = 150):
+    def __init__(self, max_total_lines: int = 10000, max_lines_per_snippet: int = 500):
         self.max_total_lines = max_total_lines
         self.max_lines_per_snippet = max_lines_per_snippet
 
